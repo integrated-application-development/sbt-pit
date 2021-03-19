@@ -2,48 +2,81 @@ package org.pitest.sbt
 
 import sbt._
 import Keys._
+import org.pitest.mutationtest.tooling.AnalysisResult
 
-private[sbt] case class Configuration(engine : String, mutators : Seq[String], outputFormats : Seq[String], jvmArgs : Seq[String], includedGroups : Seq[String], excludedGroups : Seq[String])
-private[sbt] case class Options(detectInlinedCode : Boolean, mutateStaticInitializers : Boolean, threads : Int, maxMutationsPerClass : Int, verbose : Boolean, timestampedReports : Boolean, mutationUnitSize : Int, timeoutFactor : Float, timeoutConst : Long )
-private[sbt] case class PathSettings(baseDir : File, targetPath: File, mutatablePath: Seq[File], classPath: Classpath, sources : Seq[File])
-private[sbt] case class FilterSettings(targetClasses : Seq[String], targetTests : Seq[String], dependencyDistance : Int)
-private[sbt] case class Excludes(excludedClasses : Seq[String], excludedMethods : Seq[String], avoidCallsTo : Seq[String])
+private[sbt] case class Configuration(
+    engine : String,
+    mutators : Seq[String],
+    outputFormats : Seq[String],
+    jvmArgs : Seq[String],
+    includedGroups : Seq[String],
+    excludedGroups : Seq[String],
+    testPlugin: String
+)
+private[sbt] case class Options(
+    detectInlinedCode : Boolean,
+    threads : Int,
+    maxMutationsPerClass : Int,
+    verbose : Boolean,
+    mutationUnitSize : Int,
+    timeoutFactor : Float,
+    timeoutConst : Long
+)
+private[sbt] case class PathSettings(
+    baseDir : File,
+    targetPath: File,
+    mutatablePath: Seq[File],
+    classPath: Classpath,
+    sources : Seq[File],
+    historyInput: File,
+    historyOutput: File
+)
+private[sbt] case class FilterSettings(
+    targetClasses : Seq[String],
+    targetTests : Seq[String],
+    dependencyDistance : Int
+)
+private[sbt] case class Excludes(
+    excludedClasses : Seq[String],
+    excludedMethods : Seq[String],
+    avoidCallsTo : Seq[String]
+)
 
-object PitKeys {
-    val pitestTask = TaskKey[Unit]("pitest")
-    
-    val engine = SettingKey[String]("pit-engine")
-    val mutators = SettingKey[Seq[String]]("pit-mutators")
-    val outputFormats = SettingKey[Seq[String]]("pit-outputFormats")
-    val includedGroups = SettingKey[Seq[String]]("pit-includedGroups")
-    val excludedGroups = SettingKey[Seq[String]]("pit-excludedGroups")
-    
-    val targetClasses = SettingKey[Seq[String]]("pit-target-classes")
-    val targetTests = SettingKey[Seq[String]]("pit-target-tests")
-    val dependencyDistance = SettingKey[Int]("pit-max-dependency-distance")
-    val excludedMethods = SettingKey[Seq[String]]("pit-excluded-methods")
-    val excludedClasses = SettingKey[Seq[String]]("pit-excluded-classes")
-    val avoidCallsTo = SettingKey[Seq[String]]("pit-avoid-calls-to")    
-    val threads = SettingKey[Int]("pit-threads") 
-    val maxMutationsPerClass = SettingKey[Int]("pit-max-mutation-per-class")
-    val verbose = SettingKey[Boolean]("pit-verbose") 
-    val timestampedReports = SettingKey[Boolean]("pit-timestampedReports") 
-    val mutationUnitSize = SettingKey[Int]("pit-mutationUnitSize")
-    val timeoutFactor = SettingKey[Float]("pit-timeoutFactor")
-    val timeoutConst = SettingKey[Long]("pit-timeoutConst")
-    val mutateStaticInitializers = SettingKey[Boolean]("pit-mutate-static-initializers")
-    val detectInlinedCode =  SettingKey[Boolean]("pit-detect-inlined-code")
+trait PitKeys {
+    val pitest = TaskKey[AnalysisResult]("pitest")
+    val pitestAggregate = TaskKey[Unit]("pitest-aggregate")
+
+    val pitEngine = SettingKey[String]("pit-engine")
+    val pitMutators = SettingKey[Seq[String]]("pit-mutators")
+    val pitOutputFormats = SettingKey[Seq[String]]("pit-outputFormats")
+    val pitIncludedGroups = SettingKey[Seq[String]]("pit-included-groups")
+    val pitExcludedGroups = SettingKey[Seq[String]]("pit-excluded-groups")
+
+    val pitTargetClasses = TaskKey[Seq[String]]("pit-target-classes")
+    val pitTargetTests = TaskKey[Seq[String]]("pit-target-tests")
+    val pitDependencyDistance = SettingKey[Int]("pit-max-dependency-distance")
+    val pitExcludedMethods = SettingKey[Seq[String]]("pit-excluded-methods")
+    val pitExcludedClasses = SettingKey[Seq[String]]("pit-excluded-classes")
+    val pitAvoidCallsTo = SettingKey[Seq[String]]("pit-avoid-calls-to")
+    val pitThreads = SettingKey[Int]("pit-threads")
+    val pitMaxMutationsPerClass = SettingKey[Int]("pit-max-mutation-per-class")
+    val pitVerbose = SettingKey[Boolean]("pit-verbose")
+    val pitMutationUnitSize = SettingKey[Int]("pit-mutationUnitSize")
+    val pitTimeoutFactor = SettingKey[Float]("pit-timeoutFactor")
+    val pitTimeoutConst = SettingKey[Long]("pit-timeoutConst")
+    val pitDetectInlinedCode =  SettingKey[Boolean]("pit-detect-inlined-code")
+    val pitTestPlugin = SettingKey[String]("pit-test-plugin")
+    val pitHistoryInputLocation = SettingKey[Option[File]]("pit-history-input-location")
+    val pitHistoryOutputLocation = SettingKey[Option[File]]("pit-history-output-location")
     
     /** Output path for reports. Defaults to <code>target / "pit-reports"</code>. */
-    val reportPath = SettingKey[File]("pit-target-path")
+    val pitReportPath = SettingKey[File]("pit-target-path")
+    val pitAggregateReportPath = SettingKey[File]("pit-aggregate-target-path")
     
-    
-    private[sbt] val mutableCodePaths = TaskKey[Seq[File]]("mutable-code-path")
-    private[sbt] val pathSettings = TaskKey[PathSettings]("pit-path-settings")           
-    private[sbt] val filterSettings = TaskKey[FilterSettings]("pit-filter-settings")
-    private[sbt] val excludes = TaskKey[Excludes]("pit-excludes")
-    private[sbt] val options = TaskKey[Options]("pit-options")
+    private[sbt] val pitMutableCodePaths = TaskKey[Seq[File]]("mutable-code-path")
+    private[sbt] val pitPathSettings = TaskKey[PathSettings]("pit-path-settings")
+    private[sbt] val pitFilterSettings = TaskKey[FilterSettings]("pit-filter-settings")
+    private[sbt] val pitExcludes = TaskKey[Excludes]("pit-excludes")
+    private[sbt] val pitOptions = TaskKey[Options]("pit-options")
     private[sbt] val pitConfiguration = TaskKey[Configuration]("pit-configuration")
-    
-
 }
