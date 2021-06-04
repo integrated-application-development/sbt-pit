@@ -209,7 +209,7 @@ object PitPlugin extends AutoPlugin {
   }
 
   def pitestAggregateTask: Def.Initialize[Task[Unit]] = Def.task {
-    allProjectsTask(Test / pitest).value
+    val pitestResults = allProjectsTask(Test / pitest).value
 
     streams.value.log.info("Aggregating Pitest reports for " + name.value + "...")
 
