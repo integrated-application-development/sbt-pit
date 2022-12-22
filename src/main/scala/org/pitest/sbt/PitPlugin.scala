@@ -1,21 +1,26 @@
 package org.pitest.sbt
 
 import org.pitest.aggregate.ReportAggregator
+import org.pitest.functional.FCollection
 import org.pitest.mutationtest.config.{DirectoryResultOutputStrategy, PluginServices, ReportOptions, UndatedReportDirCreationStrategy}
 import org.pitest.mutationtest.tooling.{AnalysisResult, EntryPoint}
 import org.pitest.testapi.TestGroupConfig
-import sbt.{Def, inProjects, _}
-import sbt.Keys._
+import org.pitest.util.Verbosity
+import sbt.Keys.*
+import sbt.{Def, inProjects, *}
 
 import java.net.URLDecoder
-import scala.collection.JavaConverters._
-import scala.xml.{Text, XML, Node}
+import java.nio.charset.Charset
+import java.util.Properties
+import java.util.stream.Collectors
+import scala.collection.JavaConverters.*
+import scala.xml.{Node, XML}
 
 object PitPlugin extends AutoPlugin {
   object autoImport extends PitKeys
   override def trigger = allRequirements
 
-  import autoImport._
+  import autoImport.*
 
   override def projectSettings: Seq[Def.Setting[_]] =
     unscopedSettings ++ inConfig(Test)(scopedSettings)
@@ -31,13 +36,21 @@ object PitPlugin extends AutoPlugin {
     pitTimeoutFactor := 1.25f,
     pitTimeoutConst := 4000,
     pitDetectInlinedCode := true,
+    pitFailWhenNoMutation := true,
+    pitFullMutationMatrix := false,
+    pitTimestampedReports := false,
+    pitExportLineCoverage := true,
 
     pitMutators := Seq(),
+    pitFeatures := Seq(),
+    pitJvmArgs := Seq(),
+    pitArgLine := "",
     pitOutputFormats := Seq("HTML"),
     pitIncludedGroups := Seq(),
     pitExcludedGroups := Seq(),
+    pitPluginConfiguration := Map(),
+    pitIncludedTestMethods := Seq(),
 
-    pitDependencyDistance := -1,
     pitReportPath := target.value / "pit-reports",
     pitAggregateReportPath := target.value / "pit-reports-aggregate",
     pitTargetClasses := Seq(),
@@ -45,8 +58,9 @@ object PitPlugin extends AutoPlugin {
     pitExcludedMethods := Seq(),
     pitAvoidCallsTo := Seq(),
     pitExcludedClasses := Seq(),
+    pitExcludedTestClasses := Seq(),
+    pitExcludedRunners := Seq(),
     pitEngine := "gregor",
-    pitTestPlugin := "junit",
 
     pitHistoryInputLocation := Option.empty,
     pitHistoryOutputLocation := Option.empty,
@@ -55,11 +69,14 @@ object PitPlugin extends AutoPlugin {
       Configuration(
         pitEngine.value,
         pitMutators.value,
+        pitFeatures.value,
         pitOutputFormats.value,
-        (Test / javacOptions).value,
+        pitJvmArgs.value,
+        pitArgLine.value,
         pitIncludedGroups.value,
         pitExcludedGroups.value,
-        pitTestPlugin.value
+        pitIncludedTestMethods.value,
+        pitPluginConfiguration.value
       )
     }.value,
     pitMutableCodePaths := Def.task{
@@ -77,10 +94,15 @@ object PitPlugin extends AutoPlugin {
       )
     } dependsOn (Compile / compile)).value,
     pitFilterSettings := Def.task{
-      FilterSettings(pitTargetClasses.value, pitTargetTests.value, pitDependencyDistance.value)
+      FilterSettings(pitTargetClasses.value, pitTargetTests.value)
     }.value,
     pitExcludes := Def.task{
-      Excludes(pitExcludedClasses.value, pitExcludedMethods.value, pitAvoidCallsTo.value)
+      Excludes(
+        pitExcludedClasses.value,
+        pitExcludedMethods.value,
+        pitExcludedTestClasses.value,
+        pitExcludedRunners.value,
+        pitAvoidCallsTo.value)
     }.value,
     pitOptions := Def.task{
       Options(
@@ -90,7 +112,11 @@ object PitPlugin extends AutoPlugin {
         pitVerbose.value,
         pitMutationUnitSize.value,
         pitTimeoutFactor.value,
-        pitTimeoutConst.value
+        pitTimeoutConst.value,
+        pitFailWhenNoMutation.value,
+        pitFullMutationMatrix.value,
+        pitTimestampedReports.value,
+        pitExportLineCoverage.value
       )
     }.value
   )
@@ -119,38 +145,81 @@ object PitPlugin extends AutoPlugin {
     ps: PluginServices
   ): ReportOptions = {
     val data = new ReportOptions
+
+    data.setCodePaths(toJavaList(paths.mutatablePath.map(_.getPath)))
+
+    data.setClassPathElements(toJavaList(makeClasspath(paths, ps)))
+
+    data.setFailWhenNoMutations(options.failWhenNoMutation)
+
+    data.setTargetClasses(toJavaList(filters.targetClasses))
+    data.setTargetTests(org.pitest.util.Glob.toGlobPredicates(toJavaList(filters.targetTests)))
+
+    data.setExcludedClasses(toJavaList(excludes.excludedClasses))
+    data.setExcludedMethods(toJavaList(excludes.excludedMethods))
+    data.setExcludedTestClasses(
+      FCollection.map(
+        toJavaList(excludes.excludeTestClasses),
+        org.pitest.util.Glob.toGlobPredicate))
+    data.setNumberOfThreads(options.threads)
+    data.setExcludedRunners(toJavaList(excludes.excludedRunners))
+
     data.setReportDir(paths.targetPath.getAbsolutePath)
-    data.setClassPathElements(makeClasspath(paths, ps).asJavaCollection)
-    data.setCodePaths(paths.mutatablePath.map(_.getPath).asJavaCollection)
+    data.setVerbosity(if (options.verbose) Verbosity.VERBOSE else Verbosity.DEFAULT)
+
+    data.addChildJVMArgs(java.util.List.copyOf(toJavaList(config.jvmArgs)))
+    data.setArgLine(config.argline)
+
+    data.setMutators(toJavaList(config.mutators))
+    data.setFeatures(toJavaList(config.features))
+    data.setTimeoutConstant(options.timeoutConst)
+    data.setTimeoutFactor(options.timeoutFactor)
+    data.setLoggingClasses(toJavaList(excludes.excludedMethods))
+
+    data.setSourceDirs(toJavaList(paths.sources.map(_.toPath)))
+
+    data.addOutputFormats(toJavaList(config.outputFormats))
+
+    data.setGroupConfig(new TestGroupConfig(
+      java.util.List.copyOf(toJavaList(config.excludedGroups)),
+      java.util.List.copyOf(toJavaList(config.includedGroups))))
+
+    data.setFullMutationMatrix(options.fullMutationMatrix)
+
+    data.setMutationUnitSize(options.mutationUnitSize)
+    data.setShouldCreateTimestampedReports(options.timestampedReports)
+    data.setDetectInlinedCode(options.detectInlinedCode)
+
     data.setHistoryInputLocation(paths.historyInput)
     data.setHistoryOutputLocation(paths.historyOutput)
-    data.setTargetClasses(filters.targetClasses.asJavaCollection)
-    data.setTargetTests(org.pitest.util.Glob.toGlobPredicates(filters.targetTests.asJavaCollection))
-    data.setDependencyAnalysisMaxDistance(filters.dependencyDistance)
-    data.setSourceDirs(paths.sources.asJavaCollection)
-    data.setVerbose(options.verbose)
-    data.setDetectInlinedCode(options.detectInlinedCode)
-    data.setNumberOfThreads(options.threads)
-    data.setVerbose(options.verbose)
-    data.setMutationUnitSize(options.mutationUnitSize)
-    data.setTimeoutFactor(options.timeoutFactor)
-    data.setTimeoutConstant(options.timeoutConst)
-    data.setExcludedClasses(excludes.excludedClasses.asJavaCollection)
-    data.setExcludedMethods(excludes.excludedMethods.asJavaCollection)
-    data.setLoggingClasses(excludes.excludedMethods.asJavaCollection)
 
+    data.setExportLineCoverage(options.exportLineCoverage)
     data.setMutationEngine(config.engine)
-    data.setMutators(config.mutators.asJavaCollection)
-    data.addOutputFormats(config.outputFormats.asJavaCollection)
-    data.setTestPlugin(config.testPlugin)
+//    data.setJavaExecutable() // defaults to JAVA_HOME
+    data.setFreeFormProperties(createPluginProperties(config.pluginConfiguration))
+    data.setIncludedTestMethods(toJavaList(config.includedTestMethods))
 
-    data.setShouldCreateTimestampedReports(false)
-    data.setExportLineCoverage(true)
+    data.setInputEncoding(Charset.defaultCharset())
+    data.setOutputEncoding(Charset.defaultCharset())
 
-    val conf = new TestGroupConfig(config.excludedGroups.asJava, config.includedGroups.asJava)
-    data.setGroupConfig(conf)
+    data.setProjectBase(paths.baseDir.toPath)
 
     data
+  }
+
+  private def toJavaList[T](scalaCollection: Iterable[T]): java.util.List[T] =
+    java.util.List.copyOf(scalaCollection.asJavaCollection)
+
+  private def createPluginProperties(
+    pluginConfiguration: Map[String, String]
+  ): Properties = {
+    val properties = new Properties()
+
+    if (pluginConfiguration.nonEmpty) {
+      pluginConfiguration.foreach(entry => properties.put(entry._1, entry._2))
+    }
+
+    properties
   }
 
   def runPitest(
