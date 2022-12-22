@@ -3,7 +3,7 @@ lazy val `sbt-pit` = (project in file("."))
     sbtPlugin := true,
     name := "sbt-pit",
     organization := "com.integradev.3rdparty",
-    version := "1.1.3-SNAPSHOT",
+    version := "1.1.3",
     crossScalaVersions := Seq("2.10.7", "2.11.12", "2.12.13"),
     libraryDependencies ++= Seq(
       "org.pitest" % "pitest" % "1.10.1",
