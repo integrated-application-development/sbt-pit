@@ -1,7 +1,6 @@
 package org.pitest.sbt
 
 import org.pitest.aggregate.ReportAggregator
-import org.pitest.functional.FCollection
 import org.pitest.mutationtest.config.{DirectoryResultOutputStrategy, PluginServices, ReportOptions, UndatedReportDirCreationStrategy}
 import org.pitest.mutationtest.tooling.{AnalysisResult, EntryPoint}
 import org.pitest.testapi.TestGroupConfig
@@ -12,7 +11,6 @@ import sbt.{Def, inProjects, *}
 import java.net.URLDecoder
 import java.nio.charset.Charset
 import java.util.Properties
-import java.util.stream.Collectors
 import scala.collection.JavaConverters.*
 import scala.xml.{Node, XML}
 
@@ -146,43 +144,42 @@ object PitPlugin extends AutoPlugin {
   ): ReportOptions = {
     val data = new ReportOptions
 
-    data.setCodePaths(toJavaList(paths.mutatablePath.map(_.getPath)))
+    data.setCodePaths(paths.mutatablePath.map(_.getPath).asJavaCollection)
 
-    data.setClassPathElements(toJavaList(makeClasspath(paths, ps)))
+    data.setClassPathElements(makeClasspath(paths, ps).asJavaCollection)
 
     data.setFailWhenNoMutations(options.failWhenNoMutation)
 
-    data.setTargetClasses(toJavaList(filters.targetClasses))
-    data.setTargetTests(org.pitest.util.Glob.toGlobPredicates(toJavaList(filters.targetTests)))
+    data.setTargetClasses(filters.targetClasses.asJavaCollection)
+    data.setTargetTests(org.pitest.util.Glob.toGlobPredicates(filters.targetTests.asJavaCollection))
 
-    data.setExcludedClasses(toJavaList(excludes.excludedClasses))
-    data.setExcludedMethods(toJavaList(excludes.excludedMethods))
+    data.setExcludedClasses(excludes.excludedClasses.asJavaCollection)
+    data.setExcludedMethods(excludes.excludedMethods.asJavaCollection)
     data.setExcludedTestClasses(
-      FCollection.map(
-        toJavaList(excludes.excludeTestClasses),
-        org.pitest.util.Glob.toGlobPredicate))
+      excludes.excludeTestClasses.map(
+        org.pitest.util.Glob.toGlobPredicate.apply(_)).asJavaCollection);
     data.setNumberOfThreads(options.threads)
-    data.setExcludedRunners(toJavaList(excludes.excludedRunners))
+    data.setExcludedRunners(excludes.excludedRunners.asJavaCollection)
 
     data.setReportDir(paths.targetPath.getAbsolutePath)
     data.setVerbosity(if (options.verbose) Verbosity.VERBOSE else Verbosity.DEFAULT)
 
-    data.addChildJVMArgs(java.util.List.copyOf(toJavaList(config.jvmArgs)))
+    data.addChildJVMArgs(java.util.List.copyOf(config.jvmArgs.asJavaCollection))
     data.setArgLine(config.argline)
 
-    data.setMutators(toJavaList(config.mutators))
-    data.setFeatures(toJavaList(config.features))
+    data.setMutators(config.mutators.asJavaCollection)
+    data.setFeatures(config.features.asJavaCollection)
     data.setTimeoutConstant(options.timeoutConst)
     data.setTimeoutFactor(options.timeoutFactor)
-    data.setLoggingClasses(toJavaList(excludes.excludedMethods))
+    data.setLoggingClasses(excludes.excludedMethods.asJavaCollection)
 
-    data.setSourceDirs(toJavaList(paths.sources.map(_.toPath)))
+    data.setSourceDirs(paths.sources.map(_.toPath).asJavaCollection)
 
-    data.addOutputFormats(toJavaList(config.outputFormats))
+    data.addOutputFormats(config.outputFormats.asJavaCollection)
 
     data.setGroupConfig(new TestGroupConfig(
-      java.util.List.copyOf(toJavaList(config.excludedGroups)),
-      java.util.List.copyOf(toJavaList(config.includedGroups))))
+      java.util.List.copyOf(config.excludedGroups.asJavaCollection),
+      java.util.List.copyOf(config.includedGroups.asJavaCollection)))
 
     data.setFullMutationMatrix(options.fullMutationMatrix)
 
@@ -197,7 +194,7 @@ object PitPlugin extends AutoPlugin {
     data.setMutationEngine(config.engine)
 //    data.setJavaExecutable() // defaults to JAVA_HOME
     data.setFreeFormProperties(createPluginProperties(config.pluginConfiguration))
-    data.setIncludedTestMethods(toJavaList(config.includedTestMethods))
+    data.setIncludedTestMethods(config.includedTestMethods.asJavaCollection)
 
     data.setInputEncoding(Charset.defaultCharset())
     data.setOutputEncoding(Charset.defaultCharset())
@@ -206,9 +203,6 @@ object PitPlugin extends AutoPlugin {
 
     data
   }
-
-  private def toJavaList[T](scalaCollection: Iterable[T]): java.util.List[T] =
-    java.util.List.copyOf(scalaCollection.asJavaCollection)
 
   private def createPluginProperties(
     pluginConfiguration: Map[String, String]
